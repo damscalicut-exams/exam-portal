@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DAMS Calicut — Weekly Test</title>
+<style>
+:root{ --maroon:#8f141d; --maroon-dark:#5e0d13; --gold:#c9a227; --ink:#1a1612; --paper:#fff; --muted:#6b6258; --line:#e7e0d6; }
+*{box-sizing:border-box; margin:0; padding:0;}
+body{font-family:'Segoe UI',Arial,sans-serif; background:#f7f3ec; color:var(--ink); line-height:1.5;}
+.wrap{max-width:720px; margin:0 auto; padding:24px 16px 80px;}
+header{background:var(--maroon); color:#fff; padding:18px 16px; text-align:center; font-weight:800; font-size:20px; letter-spacing:.3px;}
+.card{background:var(--paper); border:1px solid var(--line); border-radius:14px; padding:24px; margin-top:20px; box-shadow:0 10px 24px -14px rgba(0,0,0,.2);}
+h2{font-size:18px; margin-bottom:14px; color:var(--maroon-dark);}
+label{display:block; font-size:13px; font-weight:700; margin:14px 0 6px;}
+input[type=text], input[type=tel], input[type=email]{width:100%; padding:11px 13px; border:1.5px solid var(--line); border-radius:8px; font-size:15px;}
+.btn{display:inline-block; margin-top:20px; background:var(--maroon); color:#fff; border:none; padding:13px 26px; border-radius:8px; font-weight:700; font-size:15px; cursor:pointer;}
+.btn:hover{background:var(--maroon-dark);}
+.btn:disabled{background:#bbb; cursor:not-allowed;}
+.msg{padding:12px 14px; border-radius:8px; font-size:14px; margin-top:14px; display:none;}
+.msg.show{display:block;}
+.msg.error{background:#fde8e8; color:#a33;}
+.msg.info{background:#eef4fb; color:#1f5a8a;}
+.timer{position:sticky; top:0; z-index:10; background:var(--gold); color:#352600; text-align:center; font-weight:800; padding:10px; font-size:16px; letter-spacing:.5px;}
+.qcard{margin-bottom:18px;}
+.qnum{font-weight:800; color:var(--maroon); font-size:13px; margin-bottom:6px;}
+.qtext{font-size:15.5px; font-weight:600; margin-bottom:10px;}
+.qimg{max-width:100%; border-radius:8px; margin-bottom:12px; display:block;}
+.opt{display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1.5px solid var(--line); border-radius:8px; margin-bottom:8px; cursor:pointer; font-size:14.5px;}
+.opt:hover{border-color:var(--gold);}
+.opt.selected{border-color:var(--maroon); background:#fdf3e9;}
+.opt input{margin-top:2px;}
+.progress{font-size:13px; color:var(--muted); margin-bottom:10px;}
+.hidden{display:none;}
+.center{text-align:center;}
+.thankyou{font-size:20px; font-weight:800; color:var(--maroon-dark); margin-bottom:10px;}
+</style>
+</head>
+<body>
+
+<header>DAMS Calicut — Online Test Portal</header>
+
+<div class="wrap">
+
+  <!-- STEP 1: ENTRY FORM -->
+  <div class="card" id="entryCard">
+    <h2 id="testTitle">Loading test...</h2>
+    <div id="entryMsg" class="msg"></div>
+    <label for="f-name">Full Name *</label>
+    <input id="f-name" type="text" placeholder="Your full name">
+    <label for="f-phone">Phone Number *</label>
+    <input id="f-phone" type="tel" placeholder="10-digit mobile number">
+    <label for="f-batch">Batch / Email (optional)</label>
+    <input id="f-batch" type="text" placeholder="e.g. FMGE Batch 2026 or email">
+    <button class="btn" id="startBtn" onclick="startExam()">Start Test</button>
+  </div>
+
+  <!-- STEP 2: EXAM -->
+  <div id="examCard" class="hidden">
+    <div class="timer" id="timerBar">Time left: --:--</div>
+    <div class="card">
+      <div class="progress" id="progressText"></div>
+      <div id="questionsContainer"></div>
+      <button class="btn" id="submitBtn" onclick="submitExam()">Submit Test</button>
+    </div>
+  </div>
+
+  <!-- STEP 3: DONE -->
+  <div id="doneCard" class="hidden center">
+    <div class="card">
+      <div class="thankyou">✅ Test Submitted</div>
+      <p>Thank you, <span id="doneName"></span>. Your responses have been recorded.</p>
+      <p style="margin-top:10px; color:var(--muted); font-size:13.5px;">Results are shared by your DAMS Calicut faculty — you do not see your score here.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ===================== CONFIG =====================
+// Paste your Apps Script Web App URL here (ends in /exec)
+const API_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+// ====================================================
+
+let activeTest = null;
+let questions = [];
+let answers = {};
+let timerInterval = null;
+let secondsLeft = 0;
+let startTime = null;
+
+async function init() {
+  try {
+    const res = await fetch(`${API_URL}?action=getActiveTest`);
+    const data = await res.json();
+    if (!data.found) {
+      document.getElementById('testTitle').textContent = 'No active test right now.';
+      document.getElementById('startBtn').disabled = true;
+      return;
+    }
+    activeTest = data;
+    document.getElementById('testTitle').textContent = data.title + ' (' + data.durationMinutes + ' minutes)';
+  } catch (err) {
+    document.getElementById('testTitle').textContent = 'Could not load test. Please refresh.';
+  }
+}
+init();
+
+function showMsg(elId, text, type) {
+  const el = document.getElementById(elId);
+  el.textContent = text;
+  el.className = 'msg show ' + type;
+}
+
+async function startExam() {
+  const name = document.getElementById('f-name').value.trim();
+  const phone = document.getElementById('f-phone').value.trim();
+  const batch = document.getElementById('f-batch').value.trim();
+
+  if (!name || !phone) {
+    showMsg('entryMsg', 'Please enter your name and phone number.', 'error');
+    return;
+  }
+  if (localStorage.getItem('dams_attempted_' + activeTest.testTag) === phone) {
+    showMsg('entryMsg', 'You have already attempted this test from this device.', 'error');
+    return;
+  }
+
+  document.getElementById('startBtn').disabled = true;
+  showMsg('entryMsg', 'Checking eligibility...', 'info');
+
+  try {
+    const checkRes = await fetch(`${API_URL}?action=checkAttempt&testTag=${encodeURIComponent(activeTest.testTag)}&phone=${encodeURIComponent(phone)}`);
+    const checkData = await checkRes.json();
+    if (checkData.alreadyAttempted) {
+      showMsg('entryMsg', 'This phone number has already submitted this test.', 'error');
+      document.getElementById('startBtn').disabled = false;
+      return;
+    }
+
+    const qRes = await fetch(`${API_URL}?action=getQuestions&testTag=${encodeURIComponent(activeTest.testTag)}`);
+    questions = await qRes.json();
+    if (!questions.length) {
+      showMsg('entryMsg', 'No questions found for this test. Contact your faculty.', 'error');
+      document.getElementById('startBtn').disabled = false;
+      return;
+    }
+
+    window.studentInfo = { name, phone, batch };
+    renderQuestions();
+    document.getElementById('entryCard').classList.add('hidden');
+    document.getElementById('examCard').classList.remove('hidden');
+    startTime = Date.now();
+    startTimer(activeTest.durationMinutes * 60);
+  } catch (err) {
+    showMsg('entryMsg', 'Something went wrong. Please try again.', 'error');
+    document.getElementById('startBtn').disabled = false;
+  }
+}
+
+function renderQuestions() {
+  document.getElementById('progressText').textContent = `${questions.length} questions · select one option per question`;
+  const container = document.getElementById('questionsContainer');
+  container.innerHTML = questions.map((q, idx) => `
+    <div class="qcard">
+      <div class="qnum">Question ${idx + 1} of ${questions.length}${q.subject ? ' · ' + q.subject : ''}</div>
+      <div class="qtext">${escapeHtml(q.question)}</div>
+      ${q.imageUrl ? `<img class="qimg" src="${q.imageUrl}" alt="">` : ''}
+      ${['A','B','C','D'].map(letter => `
+        <label class="opt" id="opt-${q.id}-${letter}" onclick="selectOption('${q.id}','${letter}')">
+          <input type="radio" name="q-${q.id}" value="${letter}">
+          <span><b>${letter}.</b> ${escapeHtml(q.options[letter] || '')}</span>
+        </label>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function selectOption(qid, letter) {
+  answers[qid] = letter;
+  ['A','B','C','D'].forEach(l => {
+    document.getElementById(`opt-${qid}-${l}`).classList.toggle('selected', l === letter);
+    document.getElementById(`opt-${qid}-${l}`).querySelector('input').checked = (l === letter);
+  });
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+function startTimer(totalSeconds) {
+  secondsLeft = totalSeconds;
+  updateTimerDisplay();
+  timerInterval = setInterval(() => {
+    secondsLeft--;
+    updateTimerDisplay();
+    if (secondsLeft <= 0) {
+      clearInterval(timerInterval);
+      submitExam(true);
+    }
+  }, 1000);
+}
+
+function updateTimerDisplay() {
+  const m = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
+  const s = (secondsLeft % 60).toString().padStart(2, '0');
+  document.getElementById('timerBar').textContent = `Time left: ${m}:${s}`;
+}
+
+async function submitExam(auto) {
+  if (!auto && !confirm('Submit the test now? You cannot change answers after this.')) return;
+  clearInterval(timerInterval);
+  document.getElementById('submitBtn').disabled = true;
+  document.getElementById('submitBtn').textContent = 'Submitting...';
+
+  const timeTakenSeconds = Math.round((Date.now() - startTime) / 1000);
+  const payload = {
+    action: 'submitExam',
+    testTag: activeTest.testTag,
+    name: window.studentInfo.name,
+    phone: window.studentInfo.phone,
+    emailOrBatch: window.studentInfo.batch,
+    answers: answers,
+    timeTakenSeconds: timeTakenSeconds
+  };
+
+  try {
+    await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    // Even if the response can't be read (no-cors-style quirks), the write likely still landed.
+  }
+
+  localStorage.setItem('dams_attempted_' + activeTest.testTag, window.studentInfo.phone);
+  document.getElementById('doneName').textContent = window.studentInfo.name;
+  document.getElementById('examCard').classList.add('hidden');
+  document.getElementById('doneCard').classList.remove('hidden');
+}
+</script>
+</body>
+</html>
